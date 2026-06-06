@@ -24,7 +24,7 @@ on:
         default: ""
 
 permissions:
-  contents: write # create the release + upload binaries
+  contents: write   # create the release + upload binaries
 
 env:
   X264_REF: "stable"
@@ -130,7 +130,7 @@ jobs:
         with:
           msystem: MSYS
           update: true
-          path-type: inherit # expose the MSVC tools inside the shell
+          path-type: inherit          # expose the MSVC tools inside the shell
           install: >-
             git curl xz tar make diffutils nasm pkgconf
 
