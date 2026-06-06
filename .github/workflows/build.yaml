@@ -24,7 +24,7 @@ on:
         default: ""
 
 permissions:
-  contents: write   # create the release + upload binaries
+  contents: write # create the release + upload binaries
 
 env:
   X264_REF: "stable"
@@ -113,7 +113,7 @@ jobs:
   # (matching how Tango links its own tango.exe).
   windows-x86_64:
     needs: [resolve, create-release]
-    runs-on: windows-2022
+    runs-on: windows-2025-vs2026
     env:
       FFMPEG_VERSION: ${{ needs.resolve.outputs.ffmpeg_version }}
     steps:
@@ -130,7 +130,7 @@ jobs:
         with:
           msystem: MSYS
           update: true
-          path-type: inherit          # expose the MSVC tools inside the shell
+          path-type: inherit # expose the MSVC tools inside the shell
           install: >-
             git curl xz tar make diffutils nasm pkgconf
 
