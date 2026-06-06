@@ -64,7 +64,7 @@ ffmpeg_component_flags() {
 --enable-decoder=rawvideo,pcm_s16le
 --enable-demuxer=rawvideo,pcm_s16le,matroska
 --enable-muxer=matroska,mov,mp4
---enable-parser=h264,aac,flac
+--enable-parser=h264,aac,flac,av1
 --enable-bsf=extract_extradata,aac_adtstoasc
 --enable-filter=scale,format,null,aresample,aformat,anull
 --enable-protocol=file,pipe
