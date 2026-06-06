@@ -83,7 +83,6 @@ ffmpeg_shape_flags() {
 --disable-doc
 --disable-network
 --disable-avdevice
---disable-postproc
 --disable-devices
 --disable-ffplay
 --disable-ffprobe
