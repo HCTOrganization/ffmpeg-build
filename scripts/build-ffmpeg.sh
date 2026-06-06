@@ -58,6 +58,22 @@ if [ -n "${FFMPEG_EXTRA:-}" ]; then
   args+=("${_extra[@]}")
 fi
 
+# MSVC-only: give the Coded Bitstream layer a non-empty codec-type table.
+# Enabling the mov/mp4 muxer unconditionally compiles libavformat's cbs.o
+# (libavformat/cbs.c is just `#include "libavcodec/cbs.c"`, for the av1C box).
+# In our --disable-everything build no CBS type is enabled, so cbs.c:33's
+# cbs_type_table[] collapses to a *zero-length* array with an empty `{}`
+# initializer. GCC/Clang accept that (GNU zero-length-array extension); MSVC
+# does not -- newer cl.exe (vs2026) hard-errors C7757 ("an array of unknown
+# size cannot be initialized by an empty initializer"), older VS2022 dies with
+# a C1001 ICE. Enabling the av1 parser selects cbs_av1 (CONFIG_CBS_AV1=1), so
+# &ff_cbs_type_av1 lands in the table and it's no longer empty. The AV1 CBS
+# code is never executed (we never mux AV1), so this is purely a compile fix;
+# gated to MSVC so the other platforms keep the leanest possible binary.
+case "${FFMPEG_EXTRA:-}" in
+  *--toolchain=msvc*) args+=(--enable-parser=av1) ;;
+esac
+
 # shellcheck disable=SC2046  # intentional word-split of the flag lists
 echo "+ ffmpeg configure ${args[*]} <component+shape flags>"
 ./configure \
