@@ -66,7 +66,7 @@ ffmpeg_component_flags() {
 --enable-muxer=matroska,mov,mp4
 --enable-parser=h264,aac,flac,av1
 --enable-bsf=extract_extradata,aac_adtstoasc
---enable-filter=scale,format,null,aresample,aformat,anull
+--enable-filter=scale,format,null,aresample,aformat,anull,setparams
 --enable-protocol=file,pipe
 FLAGS
 }
