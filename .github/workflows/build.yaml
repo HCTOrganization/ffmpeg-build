@@ -1,8 +1,11 @@
 name: build-ffmpeg
 
 # Builds a minimal static `ffmpeg` for every platform Tango ships on:
-#   - Linux  x86_64   (ubuntu-22.04, glibc baseline matching the app)
-#   - Windows x86_64   (windows-2022, MSVC toolchain, static CRT, no DLLs)
+#   - Linux  x86_64    (ubuntu-22.04, glibc baseline matching the app)
+#   - Linux  arm64     (ubuntu-22.04 with cross-compilation)
+#   - Windows x86      (windows-2025, MSVC toolchain, static CRT, no DLLs)
+#   - Windows x86_64   (windows-2025, MSVC toolchain, static CRT, no DLLs)
+#   - Windows arm64    (windows-2025, MSVC toolchain, static CRT, no DLLs)
 #   - macOS  arm64     (macos-14, native)
 #   - macOS  x86_64    (macos-14, cross-compiled) -- shipped as two
 #                      separate binaries; Tango's macos/build.sh lipos them.
@@ -64,9 +67,17 @@ jobs:
             GPL (links libx264).
 
   # ---------------------------------------------------------------- Linux
-  linux-x86_64:
+  linux:
     needs: [resolve, create-release]
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            cross: ""
+          - arch: arm64
+            cross: "--enable-cross-compile --arch=aarch64"
     env:
       FFMPEG_VERSION: ${{ needs.resolve.outputs.ffmpeg_version }}
     steps:
@@ -78,32 +89,54 @@ jobs:
           sudo apt-get install -y \
             build-essential nasm yasm git pkg-config curl xz-utils
 
-      - name: Build static x264 + ffmpeg
+      - name: Install ARM64 cross-compile toolchain
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            pkg-config-aarch64-linux-gnu
+
+      - name: Build static x264 + ffmpeg (${{ matrix.arch }})
         run: |
           export PREFIX="$PWD/prefix"
-          export OUTPUT="$PWD/out/ffmpeg-linux-x86_64"
+          export OUTPUT="$PWD/out/ffmpeg-linux-${{ matrix.arch }}"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+            export AR=aarch64-linux-gnu-ar
+            export EXTRA_CFLAGS="-march=armv8-a"
+            export EXTRA_LDFLAGS=""
+            export X264_HOST="aarch64-linux-gnu"
+            export FFMPEG_EXTRA="${{ matrix.cross }}"
+          fi
           ./scripts/build-x264.sh
           ./scripts/build-ffmpeg.sh
 
-      - name: Smoke test
+      - name: Smoke test (native arch only)
+        if: matrix.arch == 'x86_64'
         run: ./scripts/smoke-test.sh ./out/ffmpeg-linux-x86_64
+
+      - name: Verify cross-built arch
+        if: matrix.arch == 'arm64'
+        run: |
+          file "out/ffmpeg-linux-${{ matrix.arch }}"
+          file "out/ffmpeg-linux-${{ matrix.arch }}" | grep -q "aarch64"
 
       - name: Report dependencies / size
         run: |
-          ls -l out/ffmpeg-linux-x86_64
-          ldd out/ffmpeg-linux-x86_64 || true
-          ( cd out && sha256sum ffmpeg-linux-x86_64 > ffmpeg-linux-x86_64.sha256 )
+          ls -l out/ffmpeg-linux-${{ matrix.arch }}
+          ldd out/ffmpeg-linux-${{ matrix.arch }} || true
+          ( cd out && sha256sum ffmpeg-linux-${{ matrix.arch }} > ffmpeg-linux-${{ matrix.arch }}.sha256 )
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-linux-x86_64
-          path: out/ffmpeg-linux-x86_64*
+          name: ffmpeg-linux-${{ matrix.arch }}
+          path: out/ffmpeg-linux-${{ matrix.arch }}*
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ffmpeg-${{ needs.resolve.outputs.ffmpeg_version }}
-          files: out/ffmpeg-linux-x86_64*
+          files: out/ffmpeg-linux-${{ matrix.arch }}*
 
   # -------------------------------------------------------- Windows (MSVC)
   # Follows FFmpeg's official "Compiling FFmpeg with MSVC" flow: an MSYS2
@@ -111,9 +144,22 @@ jobs:
   # cl.exe/link.exe via `--toolchain=msvc`. Both x264 and ffmpeg link the
   # static MSVC runtime (-MT), so the bundled exe needs no redistributable
   # (matching how Tango links its own tango.exe).
-  windows-x86_64:
+  windows:
     needs: [resolve, create-release]
     runs-on: windows-2025-vs2026
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            msvc_arch: x86
+            output_arch: x86
+          - arch: x86_64
+            msvc_arch: x64
+            output_arch: x86_64
+          - arch: arm64
+            msvc_arch: arm64
+            output_arch: arm64
     env:
       FFMPEG_VERSION: ${{ needs.resolve.outputs.ffmpeg_version }}
     steps:
@@ -121,10 +167,10 @@ jobs:
 
       # Puts cl.exe / link.exe / lib.exe + the Windows SDK on PATH and sets
       # INCLUDE / LIB, which the msys2 shell below inherits.
-      - name: Set up MSVC (x64)
+      - name: Set up MSVC (${{ matrix.msvc_arch }})
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: x64
+          arch: ${{ matrix.msvc_arch }}
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -134,7 +180,7 @@ jobs:
           install: >-
             git curl xz tar make diffutils nasm pkgconf
 
-      - name: Build static x264 + ffmpeg with MSVC
+      - name: Build static x264 + ffmpeg with MSVC (${{ matrix.arch }})
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -147,34 +193,41 @@ jobs:
           export EXTRA_CFLAGS="-MT"        # static MSVC CRT, for both x264 + ffmpeg
           ./scripts/build-x264.sh
 
-          export OUTPUT="$PWD/out/ffmpeg-windows-x86_64.exe"
+          export OUTPUT="$PWD/out/ffmpeg-windows-${{ matrix.output_arch }}.exe"
           export EXE_SUFFIX=".exe"
           export PREFIX_CFLAGS="-I$PREFIX/include"
           export PREFIX_LDFLAGS=""         # link.exe rejects -L; x264 is found via pkg-config
-          export FFMPEG_EXTRA="--toolchain=msvc --arch=x86_64 --disable-stripping"
+          export FFMPEG_EXTRA="--toolchain=msvc --arch=${{ matrix.output_arch }} --disable-stripping"
           ./scripts/build-ffmpeg.sh
 
-      - name: Smoke test
+      - name: Smoke test (x86_64 only)
+        if: matrix.arch == 'x86_64'
         shell: msys2 {0}
         run: ./scripts/smoke-test.sh ./out/ffmpeg-windows-x86_64.exe
+
+      - name: Verify binary architecture
+        if: matrix.arch != 'x86_64'
+        shell: msys2 {0}
+        run: |
+          file "out/ffmpeg-windows-${{ matrix.output_arch }}.exe"
 
       - name: Report dependencies / size
         shell: msys2 {0}
         run: |
-          ls -l out/ffmpeg-windows-x86_64.exe
-          ldd out/ffmpeg-windows-x86_64.exe || true   # expect only system DLLs
-          ( cd out && sha256sum ffmpeg-windows-x86_64.exe > ffmpeg-windows-x86_64.exe.sha256 )
+          ls -l out/ffmpeg-windows-${{ matrix.output_arch }}.exe
+          ldd out/ffmpeg-windows-${{ matrix.output_arch }}.exe || true   # expect only system DLLs
+          ( cd out && sha256sum ffmpeg-windows-${{ matrix.output_arch }}.exe > ffmpeg-windows-${{ matrix.output_arch }}.exe.sha256 )
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-windows-x86_64
-          path: out/ffmpeg-windows-x86_64.exe*
+          name: ffmpeg-windows-${{ matrix.output_arch }}
+          path: out/ffmpeg-windows-${{ matrix.output_arch }}.exe*
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ffmpeg-${{ needs.resolve.outputs.ffmpeg_version }}
-          files: out/ffmpeg-windows-x86_64.exe*
+          files: out/ffmpeg-windows-${{ matrix.output_arch }}.exe*
 
   # ---------------------------------------------------------------- macOS
   # Two separate single-arch binaries (no lipo here -- Tango's
