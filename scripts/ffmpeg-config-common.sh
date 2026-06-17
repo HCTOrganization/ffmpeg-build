@@ -41,6 +41,7 @@ export X264_REF
 #                  container for lossless exports (.mkv: libx264rgb + flac)
 #     mov,mp4      final container for scaled exports (.mp4 "-movflags +faststart")
 #     image2pipe   custom emulator-border dimension probe (tango/src/session.rs)
+#     rawvideo     custom emulator-border raw RGBA stream (tango/src/session.rs)
 #   Parsers + BSFs (the mux step stream-copies mkv -> mp4: "-c:v copy -c:a copy")
 #     h264,aac,flac parsers
 #     extract_extradata   writes the avcC box for H.264-in-MP4
@@ -66,7 +67,9 @@ export X264_REF
 #   stream: ffmpeg -stream_loop -1 -re -i in.mp4 -an -f rawvideo -pix_fmt rgba pipe:1
 # That path adds the `mov` demuxer + `h264` decoder (read/decode the MP4),
 # the `image2pipe` muxer + `bmp` encoder (the one-frame dimension probe),
-# and reuses the already-present rawvideo muxer + scale/format filters.
+# the `rawvideo` muxer (the looped raw RGBA stream -- note the exporter only
+# uses rawvideo as *input*, so only its demuxer/decoder were enabled before),
+# and reuses the already-present scale/format filters.
 # If border clips might be H.265 / AV1, also enable the `hevc` / `av1`
 # decoders (+ `hevc` parser); H.264 is the common MP4 case.
 # ---------------------------------------------------------------------------
@@ -79,7 +82,7 @@ ffmpeg_component_flags() {
 --enable-encoder=libx264,libx264rgb,aac,flac,bmp
 --enable-decoder=rawvideo,pcm_s16le,h264
 --enable-demuxer=rawvideo,pcm_s16le,matroska,mov
---enable-muxer=matroska,mov,mp4,image2pipe
+--enable-muxer=matroska,mov,mp4,image2pipe,rawvideo
 --enable-parser=h264,aac,flac,av1
 --enable-bsf=extract_extradata,aac_adtstoasc
 --enable-filter=scale,format,null,aresample,aformat,anull,setparams
