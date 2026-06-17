@@ -52,7 +52,21 @@ run -i v_scaled.mkv -i a_aac.mkv -c:v copy -c:a copy -map 0 -map 1 \
 # 5b) Lossless mux (stream copy) -> .mkv (no mp4-only flags).
 run -i v_lossless.mkv -i a_flac.mkv -c:v copy -c:a copy -map 0 -map 1 out_lossless.mkv
 
-for f in v_lossless.mkv v_scaled.mkv a_aac.mkv a_flac.mkv out_scaled.mp4 out_lossless.mkv; do
+# 6) Custom emulator-border MP4 decode (tango/src/session.rs). The app plays
+#    a user-chosen MP4 behind the emulator, muted + looped. Build a small
+#    H.264 .mp4 with the same binary, then run the two commands the app uses:
+#      probe : first frame -> BMP (image2pipe + bmp encoder) for dimensions
+#      stream: looped, muted, raw RGBA out (mov demuxer + h264 decoder +
+#              scale/format yuv->rgba). `-re` and infinite `-stream_loop -1`
+#              are dropped here so the test terminates; the component set
+#              exercised is identical.
+run -f rawvideo -pixel_format rgba -video_size ${W}x${H} -framerate "$FR" -i frames.rgba \
+  -c:v libx264 -pix_fmt yuv420p -f mp4 border.mp4
+run -i border.mp4 -an -frames:v 1 -f image2pipe -vcodec bmp border_probe.bmp
+run -stream_loop 1 -i border.mp4 -an -frames:v 16 -f rawvideo -pix_fmt rgba border_stream.rgba
+
+for f in v_lossless.mkv v_scaled.mkv a_aac.mkv a_flac.mkv out_scaled.mp4 out_lossless.mkv \
+         border.mp4 border_probe.bmp border_stream.rgba; do
   [ -s "$f" ] || { echo "FAIL: $f missing or empty" >&2; exit 1; }
   printf 'ok  %-16s %8s bytes\n' "$f" "$(wc -c < "$f")"
 done

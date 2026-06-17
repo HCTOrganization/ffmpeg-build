@@ -26,23 +26,28 @@ export X264_REF
 #     libx264rgb   lossless export  "-c:v libx264rgb -qp 0"   (scale == 0 path)
 #     aac          scaled  audio    "-c:a aac -b:a 384k"
 #     flac         lossless audio   "-c:a flac"
+#     bmp          border probe     "-f image2pipe -vcodec bmp" (tango/src/session.rs)
 #   Decoders (decode the raw streams the emulator pipes in)
 #     rawvideo     "-f rawvideo -pixel_format rgba -i pipe:"
 #     pcm_s16le    "-f s16le -ar 48k -ac 2 -i pipe:"
+#     h264         custom emulator-border MP4 decode (tango/src/session.rs)
 #   Demuxers
 #     rawvideo     video input            (-f rawvideo)
 #     pcm_s16le    audio input            (-f s16le  ->  "s16le" demuxer)
 #     matroska     mux step reads back the intermediate .mkv files
+#     mov          custom emulator-border MP4 input (tango/src/session.rs)
 #   Muxers
 #     matroska     intermediate .mkv files (-f matroska) AND the final
 #                  container for lossless exports (.mkv: libx264rgb + flac)
 #     mov,mp4      final container for scaled exports (.mp4 "-movflags +faststart")
+#     image2pipe   custom emulator-border dimension probe (tango/src/session.rs)
 #   Parsers + BSFs (the mux step stream-copies mkv -> mp4: "-c:v copy -c:a copy")
 #     h264,aac,flac parsers
 #     extract_extradata   writes the avcC box for H.264-in-MP4
 #     aac_adtstoasc       AAC stream-copy safety
 #   Filters
 #     scale        "-vf scale=...:flags=neighbor"  + auto rgba->gbrp for libx264rgb
+#                  + auto yuv->rgba for the border raw-RGBA stream
 #     format       "format=yuv420p"
 #     aresample/aformat/null/anull   auto-inserted pixel/sample-format negotiation
 #   Protocols
@@ -53,6 +58,17 @@ export X264_REF
 # one double-width rawvideo stream, so no hstack/overlay filter is needed.
 # The ffmpeg CLI's filtergraph plumbing (buffer/buffersink/abuffer/
 # abuffersink/fps/...) is auto-selected by `--enable-ffmpeg`.
+#
+# Custom emulator-border video (tango/src/session.rs) shells out to this
+# same binary to play a user-chosen MP4 behind the emulator, muted and
+# looped:
+#   probe : ffmpeg -i in.mp4 -an -frames:v 1 -f image2pipe -vcodec bmp pipe:1
+#   stream: ffmpeg -stream_loop -1 -re -i in.mp4 -an -f rawvideo -pix_fmt rgba pipe:1
+# That path adds the `mov` demuxer + `h264` decoder (read/decode the MP4),
+# the `image2pipe` muxer + `bmp` encoder (the one-frame dimension probe),
+# and reuses the already-present rawvideo muxer + scale/format filters.
+# If border clips might be H.265 / AV1, also enable the `hevc` / `av1`
+# decoders (+ `hevc` parser); H.264 is the common MP4 case.
 # ---------------------------------------------------------------------------
 
 ffmpeg_component_flags() {
@@ -60,10 +76,10 @@ ffmpeg_component_flags() {
 --disable-everything
 --enable-gpl
 --enable-libx264
---enable-encoder=libx264,libx264rgb,aac,flac
---enable-decoder=rawvideo,pcm_s16le
---enable-demuxer=rawvideo,pcm_s16le,matroska
---enable-muxer=matroska,mov,mp4
+--enable-encoder=libx264,libx264rgb,aac,flac,bmp
+--enable-decoder=rawvideo,pcm_s16le,h264
+--enable-demuxer=rawvideo,pcm_s16le,matroska,mov
+--enable-muxer=matroska,mov,mp4,image2pipe
 --enable-parser=h264,aac,flac,av1
 --enable-bsf=extract_extradata,aac_adtstoasc
 --enable-filter=scale,format,null,aresample,aformat,anull,setparams
