@@ -27,6 +27,7 @@ export X264_REF
 #     aac          scaled  audio    "-c:a aac -b:a 384k"
 #     flac         lossless audio   "-c:a flac"
 #     bmp          border probe     "-f image2pipe -vcodec bmp" (tango/src/session.rs)
+#     rawvideo     border stream    "-f rawvideo -pix_fmt rgba" (tango/src/session.rs)
 #   Decoders (decode the raw streams the emulator pipes in)
 #     rawvideo     "-f rawvideo -pixel_format rgba -i pipe:"
 #     pcm_s16le    "-f s16le -ar 48k -ac 2 -i pipe:"
@@ -67,8 +68,9 @@ export X264_REF
 #   stream: ffmpeg -stream_loop -1 -re -i in.mp4 -an -f rawvideo -pix_fmt rgba pipe:1
 # That path adds the `mov` demuxer + `h264` decoder (read/decode the MP4),
 # the `image2pipe` muxer + `bmp` encoder (the one-frame dimension probe),
-# the `rawvideo` muxer (the looped raw RGBA stream -- note the exporter only
-# uses rawvideo as *input*, so only its demuxer/decoder were enabled before),
+# the `rawvideo` muxer + `rawvideo` encoder (the looped raw RGBA stream --
+# note the exporter only uses rawvideo as *input*, so only its demuxer/decoder
+# were enabled before; writing it needs the muxer AND the encoder),
 # and reuses the already-present scale/format filters.
 # If border clips might be H.265 / AV1, also enable the `hevc` / `av1`
 # decoders (+ `hevc` parser); H.264 is the common MP4 case.
@@ -79,7 +81,7 @@ ffmpeg_component_flags() {
 --disable-everything
 --enable-gpl
 --enable-libx264
---enable-encoder=libx264,libx264rgb,aac,flac,bmp
+--enable-encoder=libx264,libx264rgb,aac,flac,bmp,rawvideo
 --enable-decoder=rawvideo,pcm_s16le,h264
 --enable-demuxer=rawvideo,pcm_s16le,matroska,mov
 --enable-muxer=matroska,mov,mp4,image2pipe,rawvideo
